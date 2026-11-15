@@ -7,7 +7,7 @@ static const char* const kEmotionNames[] = {
   "neutral", "happy", "sad", "angry", "surprised", "sleepy"
 };
 static const char* const kEffectNames[] = {
-  "none", "hearts", "cross", "spiral", "closed"
+  "none", "hearts", "cross", "spiral", "closed", "fire"
 };
 
 static_assert(sizeof(kEmotionNames) / sizeof(kEmotionNames[0]) == (int)Emotion::Count,

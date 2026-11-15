@@ -81,7 +81,7 @@ bool handleCommand(EyeAnimator& eyes, const char* line, char* reply, size_t repl
   if (!strcasecmp(cmd, "fx")) {
     Effect e;
     if (!a1 || !parseEffect(a1, e)) {
-      snprintf(reply, replyLen, "ERR usage: fx none|hearts|cross|spiral|closed");
+      snprintf(reply, replyLen, "ERR usage: fx none|hearts|cross|spiral|closed|fire");
       return false;
     }
     eyes.setEffect(e);

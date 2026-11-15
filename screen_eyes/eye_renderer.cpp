@@ -38,6 +38,14 @@ constexpr float kSpiralWidth  = 0.050f;  // stroke half width
 constexpr float kSpiralTurns  = 3.0f;
 constexpr float kSpiralStep   = 2.0f;    // distance between stamped dots, px
 
+// Fire effect.
+constexpr float kSlitHalfW    = 0.13f;   // slit pupil half width, relative to the iris radius
+constexpr float kSlitHalfH    = 0.85f;   // slit pupil half height
+constexpr int   kFireCoreGap  = 48;      // hot core around the slit, 1/16 grid cell
+constexpr int   kFireBin      = 26;      // flame grid step outward, 1/16 grid cell
+constexpr int   kFireHorizontal = 10;    // horizontal distances count x10/16: long flames sideways
+constexpr int   kFireVertical = 24;      // vertical distances count x24/16: short flames up/down
+
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 // Float -> fixed point, 1/16 px.
@@ -140,6 +148,19 @@ public:
         if (a == 255) p[i] = solid;
         else if (a) p[i] = swap16(blend565i(swap16(p[i]), c, a + (a >> 7)));
       }
+    }
+  }
+
+  // Fill row y from a half-resolution heat row through a palette (already
+  // byte-swapped colors). Odd pixels interpolate between neighbors.
+  void heatRow(int y, const uint8_t* r0, const uint8_t* r1, int n, const uint16_t* lut) {
+    if ((unsigned)y >= (unsigned)h) return;
+    uint16_t* p = buf_ + y * w;
+    for (int i = 0; i < n; i++) {
+      int a = (r0[i] + r1[i]) >> 1;
+      int b = i + 1 < n ? (r0[i + 1] + r1[i + 1]) >> 1 : a;
+      p[2 * i] = lut[a];
+      p[2 * i + 1] = lut[(a + b) >> 1];
     }
   }
 
@@ -329,6 +350,12 @@ bool EyeRenderer::begin(int screenSize) {
     }
   }
 
+  fireGrid_ = size_ / 2;
+  buildFirePalette();
+  for (int t = 0; t <= 256; t++) {
+    atanLut_[t] = (uint8_t)lroundf(atanf(t / 256.0f) / (2 * kPi) * 1024);
+  }
+
   // Iris cache: big enough for the iris disc plus its anti-aliased edge.
   irisCacheSize_ = 2 * (int)ceilf(R * kIrisRadius) + 4;
   irisCache_.setColorDepth(16);
@@ -419,6 +446,121 @@ void EyeRenderer::prepare(const EyeFrame& f) {
     buildIrisCache(f.irisColor);
   }
   if (f.effect == Effect::Spiral) buildSpiral();
+  if (f.effect == Effect::Fire) stepFire(f.isRightEye ? 1 : 0);
+}
+
+void EyeRenderer::buildFirePalette() {
+  // Cel-shaded fire: flat color bands with short transitions.
+  struct Stop { int heat; uint8_t r, g, b; };
+  static const Stop stops[] = {
+    {0,   0x14, 0x02, 0x02},  // embers / background
+    {40,  0x4A, 0x08, 0x04},
+    {85,  0x9C, 0x16, 0x06},
+    {130, 0xE0, 0x44, 0x0A},
+    {175, 0xFF, 0x86, 0x1A},
+    {215, 0xFF, 0xC4, 0x40},
+    {245, 0xFF, 0xF2, 0xC8},  // white-hot, around the slit
+    {256, 0xFF, 0xF2, 0xC8},
+  };
+  const int nStops = sizeof(stops) / sizeof(stops[0]);
+  const int kEdge = 5;  // transition width between bands
+  for (int h = 0; h < 256; h++) {
+    int i = 0;
+    while (i + 1 < nStops - 1 && h >= stops[i + 1].heat) i++;
+    const Stop& a = stops[i];
+    const Stop& b = stops[i + 1];
+    uint16_t ca = rgb565(a.r, a.g, a.b), cb = rgb565(b.r, b.g, b.b);
+    int start = b.heat - kEdge;
+    uint16_t c = h >= start ? blend565i(ca, cb, (h - start) * 256 / kEdge) : ca;
+    fireLut_[h] = swap16(c);
+  }
+}
+
+void EyeRenderer::stepFire(int eye) {
+  const int A = kFireAngles, NR = kFireRadii;
+  if (!fire_[eye]) {
+    fire_[eye] = static_cast<uint8_t*>(calloc(A * NR, 1));
+    if (!fire_[eye]) fire_[eye] = fire_[eye ^ 1];  // out of RAM: share the other eye's fire
+  }
+  uint8_t* p = fire_[eye];
+  if (!p) return;
+  if (eye == 1 && fire_[1] == fire_[0]) return;  // shared: step once per frame
+
+  // Doom fire rolled into a ring: row 0 is the hot core around the slit, each
+  // row moves one step outward, drifts randomly sideways (in angle) and cools
+  // down on random steps. Rows are processed from the outside in, so every
+  // row reads the previous state of the row below it.
+  uint32_t rng = fireRng_;
+  for (int r = NR - 1; r >= 1; r--) {
+    const uint8_t* src = p + (r - 1) * A;
+    uint8_t* dst = p + r * A;
+    for (int a = 0; a < A; a++) {
+      rng ^= rng << 13;
+      rng ^= rng >> 17;
+      rng ^= rng << 5;
+      const int shift = (int)((rng & 0xFF) * 3 >> 8) - 1;  // -1, 0, +1
+      // Mostly gentle cooling, sometimes a big drop: flames of uneven length.
+      const int decay = (rng & 0x700) == 0 ? 70 : ((rng & 0x800) ? 9 : 0);
+      const int v = src[a] - decay;
+      dst[(a + shift) & (A - 1)] = (uint8_t)(v < 0 ? 0 : v);
+    }
+  }
+  for (int a = 0; a < A; a++) {
+    rng ^= rng << 13;
+    rng ^= rng >> 17;
+    rng ^= rng << 5;
+    p[a] = (uint8_t)(255 - (rng & 31));  // flickering source
+  }
+  fireRng_ = rng;
+}
+
+// Heat for one half-resolution row: maps each cell to (angle, distance from
+// the slit) with integer math and looks it up in the polar grid.
+void EyeRenderer::fireRow(const uint8_t* polar, int gy, uint8_t* out) const {
+  const int G = fireGrid_;
+  const int32_t cx16 = x16(ix_ * 0.5f), cy16 = x16(iy_ * 0.5f);
+  const int32_t slitHalf16 = x16(ir_ * kSlitHalfH * 0.5f);  // slit half height, grid cells x16
+  const int32_t invBin = (1 << 16) / kFireBin;
+  const int32_t dy = gy * 16 + 8 - cy16;
+  const int32_t ady = dy < 0 ? -dy : dy;
+  // Distance is measured from the slit segment, so the core follows the slit.
+  const int32_t dyc = ady > slitHalf16 ? (ady - slitHalf16) * kFireVertical >> 4 : 0;
+  for (int x = 0; x < G; x++) {
+    const int32_t dx = x * 16 + 8 - cx16;
+    const int32_t adx = dx < 0 ? -dx : dx;
+    const int32_t dxs = adx * kFireHorizontal >> 4;
+    // Approximate length: max + 3/8 min.
+    const int32_t mx = dxs > dyc ? dxs : dyc, mn = dxs > dyc ? dyc : dxs;
+    const int32_t dist = mx + (mn * 3 >> 3);
+    if (dist < kFireCoreGap) {
+      out[x] = 250;
+      continue;
+    }
+    // Radius position in 1/16 bins.
+    const int32_t pos = ((dist - kFireCoreGap) * invBin) >> 12;
+    const int r0 = pos >> 4, fr = pos & 15;
+    if (r0 >= kFireRadii) {
+      out[x] = 0;
+      continue;
+    }
+    // Angle in 1/1024 turns from the slit center (atan via table, by octant).
+    int ang;
+    if (adx >= ady) ang = adx ? atanLut_[(ady << 8) / adx] : 0;
+    else ang = 256 - atanLut_[(adx << 8) / ady];
+    if (dx < 0) ang = 512 - ang;
+    if (dy < 0) ang = 1024 - ang;
+    ang &= 1023;
+    // Bilinear sample: smooth flame tongues instead of per-cell noise.
+    const int a0 = ang >> 4, fa = ang & 15, a1 = (a0 + 1) & (kFireAngles - 1);
+    const uint8_t* row0 = polar + r0 * kFireAngles;
+    const int top = row0[a0] * (16 - fa) + row0[a1] * fa;
+    int bot = 0;  // beyond the last row the fire fades to zero
+    if (r0 + 1 < kFireRadii) {
+      const uint8_t* row1 = row0 + kFireAngles;
+      bot = row1[a0] * (16 - fa) + row1[a1] * fa;
+    }
+    out[x] = (uint8_t)((top * (16 - fr) + bot * fr) >> 8);
+  }
 }
 
 void EyeRenderer::buildSpiral() {
@@ -459,6 +601,12 @@ void EyeRenderer::drawBand(LGFX_Sprite& s, int yOffset) const {
 
   if (f_.effect == Effect::Closed) {
     drawClosed(s, oy);
+    return;
+  }
+
+  if (f_.effect == Effect::Fire) {
+    drawFire(s, yOffset);  // no eyelids: the fire fills the whole eye
+    drawSlit(s, oy);
     return;
   }
 
@@ -556,6 +704,47 @@ void EyeRenderer::drawClosed(LGFX_Sprite& s, float oy) const {
     if (i > 0) cv.lineAA(px, py, x, y, w, lashColor);
     px = x;
     py = y;
+  }
+}
+
+void EyeRenderer::drawFire(LGFX_Sprite& s, int oy) const {
+  Canvas cv(s);
+  const uint8_t* polar = fire_[f_.isRightEye ? 1 : 0];
+  if (!polar) {
+    cv.fill(swap16(fireLut_[0]));
+    return;
+  }
+  const int G = fireGrid_;
+  uint8_t rows[2][kMaxSize / 2];
+  uint8_t* cur = rows[0];
+  uint8_t* next = rows[1];
+  const int g0 = oy >> 1, g1 = (oy + cv.h - 1) >> 1;
+  fireRow(polar, g0, cur);
+  for (int g = g0; g <= g1; g++) {
+    fireRow(polar, g + 1 < G ? g + 1 : g, next);
+    // Even rows: this grid row; odd rows: average with the next one.
+    cv.heatRow(g * 2 - oy, cur, cur, G, fireLut_);
+    cv.heatRow(g * 2 + 1 - oy, cur, next, G, fireLut_);
+    uint8_t* t = cur;
+    cur = next;
+    next = t;
+  }
+}
+
+void EyeRenderer::drawSlit(LGFX_Sprite& s, float oy) const {
+  // Vertical almond-shaped pupil.
+  Canvas cv(s);
+  const float hh = ir_ * kSlitHalfH, hw = ir_ * kSlitHalfW;
+  const float cy = iy_ - oy;
+  const uint16_t color = rgb565(0x10, 0x00, 0x00);
+  int y0 = (int)floorf(cy - hh), y1 = (int)ceilf(cy + hh);
+  if (y0 < 0) y0 = 0;
+  if (y1 > cv.h - 1) y1 = cv.h - 1;
+  for (int y = y0; y <= y1; y++) {
+    float t = (y + 0.5f - cy) / hh;
+    float half = hw * (1 - t * t);
+    if (half <= 0) continue;
+    cv.hspanAA(y, ix_ - half, ix_ + half, color);
   }
 }
 

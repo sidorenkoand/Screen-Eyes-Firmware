@@ -7,7 +7,7 @@
 // One command per line, words separated by spaces, case-insensitive:
 //
 //   emo <neutral|happy|sad|angry|surprised|sleepy>
-//   fx <none|hearts|cross|spiral|closed>
+//   fx <none|hearts|cross|spiral|closed|fire>
 //   look <x> <y> [holdMs]   x, y in -1..1 (x: left..right, y: up..down)
 //   center                  look straight ahead
 //   auto <on|off>           idle gaze movement

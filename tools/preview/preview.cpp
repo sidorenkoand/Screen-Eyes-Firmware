@@ -76,6 +76,8 @@ int gallery(const std::string& dir) {
     {"cross",     {"fx cross", "look 0 0"}},
     {"spiral",    {"fx spiral", "look 0 0"}},
     {"closed",    {"fx closed"}},
+    {"fire",      {"fx fire", "look 0 0"}},
+    {"fire_angry", {"fx fire", "emo angry", "look 0.4 0"}},
     {"colors",    {"color 3080E0", "lid C88A64", "look -0.5 0.3"}},
   };
   for (const Shot& s : shots) {
@@ -83,7 +85,11 @@ int gallery(const std::string& dir) {
     eyes.setAutoBlink(false);
     eyes.setAutoGaze(false);
     for (const char* c : s.cmds) if (c) run(eyes, c);
-    for (uint32_t t = 0; t <= 2000; t += 20) eyes.update(t);  // let transitions settle
+    for (uint32_t t = 0; t <= 2000; t += 20) {  // let transitions (and fire) settle
+      eyes.update(t);
+      gRenderer.prepare(eyes.frame(EyeAnimator::kLeft));
+      gRenderer.prepare(eyes.frame(EyeAnimator::kRight));
+    }
     if (!writePair(dir + "/" + s.name + ".ppm", eyes)) return 1;
     printf("%s\n", s.name);
   }
@@ -108,10 +114,13 @@ int anim(const std::string& dir) {
     {13200, "fx none"},
     {13200, "emo sleepy"},
     {15000, "fx closed"},
-    {16000, "fx none"},
+    {16000, "fx fire"},
     {16000, "emo neutral"},
+    {17500, "look 0.6 0 1200"},
+    {18700, "emo angry"},
+    {20000, "fx none"},
   };
-  const uint32_t kEnd = 17500, kStep = 50;  // 20 fps
+  const uint32_t kEnd = 21000, kStep = 50;  // 20 fps
   EyeAnimator eyes(7);
   size_t next = 0;
   int n = 0;

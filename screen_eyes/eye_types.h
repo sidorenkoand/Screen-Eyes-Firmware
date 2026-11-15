@@ -21,6 +21,7 @@ enum class Effect : uint8_t {
   Cross,    // "X X" eyes
   Spiral,   // rotating spirals (dizzy)
   Closed,   // closed eyes drawn as a curved line
+  Fire,     // burning eye with a vertical slit pupil; no eyelids, no blinking
   Count
 };
 

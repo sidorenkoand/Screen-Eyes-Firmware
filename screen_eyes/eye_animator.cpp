@@ -153,6 +153,15 @@ void EyeAnimator::update(uint32_t nowMs) {
   if (dt > 100) dt = 100;  // avoid jumps after a stall
   lastMs_ = nowMs;
 
+  // The fire eye has no eyelids: no blinking, and emotions do not apply.
+  const bool fire = effect_ == Effect::Fire;
+  if (fire) {
+    pendingBlink_ = false;
+    pendingWink_ = -1;
+    doubleBlinkAtMs_ = 0;
+    blinks_[kLeft].active = blinks_[kRight].active = false;
+  }
+
   bool anyBlink = blinks_[kLeft].active || blinks_[kRight].active;
 
   // Commanded blink / wink.
@@ -169,7 +178,7 @@ void EyeAnimator::update(uint32_t nowMs) {
   }
 
   // Automatic blinking, sometimes a double blink.
-  if (autoBlink_ && !anyBlink && effect_ != Effect::Closed) {
+  if (autoBlink_ && !anyBlink && !fire && effect_ != Effect::Closed) {
     if (doubleBlinkAtMs_ && nowMs >= doubleBlinkAtMs_) {
       doubleBlinkAtMs_ = 0;
       startBlink(kLeft, nowMs, false);
@@ -199,7 +208,7 @@ void EyeAnimator::update(uint32_t nowMs) {
     }
     scheduleNextSaccade(nowMs);
     // People often blink when they shift their gaze.
-    if (autoBlink_ && !anyBlink && random01() < 0.2f) {
+    if (autoBlink_ && !anyBlink && !fire && random01() < 0.2f) {
       startBlink(kLeft, nowMs, false);
       startBlink(kRight, nowMs, false);
       scheduleNextBlink(nowMs);
@@ -208,7 +217,7 @@ void EyeAnimator::update(uint32_t nowMs) {
 
   // Smooth towards targets.
   const EmotionPreset& p = kPresets[(int)emotion_];
-  float tgy = targetGazeY_ + p.gazeBiasY;
+  float tgy = targetGazeY_ + (fire ? 0 : p.gazeBiasY);
   if (tgy > 1) tgy = 1;
   gazeX_ = approach(gazeX_, targetGazeX_, dt, kGazeTau);
   gazeY_ = approach(gazeY_, tgy, dt, kGazeTau);

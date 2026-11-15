@@ -56,6 +56,11 @@ private:
   void buildSpiral();
   void drawSpiral(LGFX_Sprite& s, int oy) const;
   void drawClosed(LGFX_Sprite& s, float oy) const;
+  void buildFirePalette();
+  void stepFire(int eye);
+  void fireRow(const uint8_t* polar, int gy, uint8_t* out) const;
+  void drawFire(LGFX_Sprite& s, int oy) const;
+  void drawSlit(LGFX_Sprite& s, float oy) const;
 
   int size_ = kMaxSize;
   Column cols_[2][kMaxSize];  // [isRightEye][x]
@@ -75,6 +80,17 @@ private:
   int16_t spiralX4_[kSpiralMaxPoints];  // 1/4 px, screen coordinates
   int16_t spiralY4_[kSpiralMaxPoints];
   int spiralCount_ = 0;
+
+  // Fire effect: "Doom fire" in polar coordinates (angle x distance from the
+  // slit), one grid per eye, allocated on first use. Drawn at half resolution
+  // through a color palette.
+  static constexpr int kFireAngles = 64;
+  static constexpr int kFireRadii = 32;
+  uint8_t* fire_[2] = {nullptr, nullptr};
+  int fireGrid_ = 0;          // half-resolution width = height used for drawing
+  uint16_t fireLut_[256];     // heat -> color, byte-swapped for the sprite buffer
+  uint8_t atanLut_[257];      // atan(t/256) in 1/1024 turns, t = 0..256
+  uint32_t fireRng_ = 0x9E3779B9;
 
   // Per-frame state (set by prepare).
   EyeFrame f_;

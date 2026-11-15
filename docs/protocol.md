@@ -25,7 +25,7 @@ Words are separated by spaces, case-insensitive.
 | Command | Example | Meaning |
 |---|---|---|
 | `emo <name>` | `emo happy` | emotion: `neutral`, `happy`, `sad`, `angry`, `surprised`, `sleepy` |
-| `fx <name>` | `fx hearts` | effect: `none`, `hearts`, `cross`, `spiral`, `closed` |
+| `fx <name>` | `fx hearts` | effect: `none`, `hearts`, `cross`, `spiral`, `closed`, `fire` |
 | `look <x> <y> [holdMs]` | `look 0.8 -0.2` | gaze, x and y in -1..1 (x: left→right, y: up→down as seen by the viewer). Idle movement resumes after `holdMs` (default 3000) |
 | `center` | | look straight ahead |
 | `auto on\|off` | `auto off` | idle gaze movement |
@@ -38,6 +38,8 @@ Words are separated by spaces, case-insensitive.
 | `help` | | list of commands |
 
 An emotion and an effect are independent: `fx hearts` keeps the current emotion's eyelids; `fx none` returns to the normal iris.
+
+Exception: `fx fire` draws a burning eye with a slit pupil and **no eyelids**. While it is on, `blink`, `wink` and automatic blinking are ignored and emotions have no visible effect (they are still stored and apply again after `fx none`). Gaze commands work as usual.
 
 ## Replies
 
