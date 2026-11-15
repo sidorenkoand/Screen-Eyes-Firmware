@@ -1,0 +1,9 @@
+# Arduino IDE "Export Compiled Binary" output
+screen_eyes/build/
+
+# Desktop preview build output
+tools/preview/build/
+tools/preview/out/
+
+# Reference images from films / anime: kept locally, not published
+tools/examples/

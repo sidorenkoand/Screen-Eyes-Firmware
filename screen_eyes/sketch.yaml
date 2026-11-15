@@ -1,0 +1,3 @@
+# Build settings for this sketch (read by Arduino IDE 2 and arduino-cli).
+# Board: ESP32-C3 Super Mini -> "ESP32C3 Dev Module", USB CDC On Boot = Enabled
+default_fqbn: esp32:esp32:esp32c3:CDCOnBoot=cdc
